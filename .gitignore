@@ -1,32 +1,14 @@
-# Unreal Engine 5
-Binaries/
-Build/
-DerivedDataCache/
-Intermediate/
-Saved/
-.vs/
-.vscode/
-*.sln
-*.suo
-*.user
-*.VC.db
-*.VC.opendb
+# Godot 4
+.godot/
+*.uid
 
-# Compiled
-*.o
-*.obj
-*.exp
-*.lib
-*.pdb
-*.ilk
+# Importados
+*.import
 
-# Plugin build artifacts
-Plugins/*/Binaries/
-Plugins/*/Intermediate/
+# Exportados
+export/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
 *.log

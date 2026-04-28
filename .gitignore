@@ -1,14 +1,21 @@
-# Godot 4
-.godot/
-*.uid
+# Dependencies
+node_modules/
 
-# Importados
-*.import
+# Build outputs
+client/dist/
+server/dist/
 
-# Exportados
-export/
+# Environment
+.env
+.env.local
 
 # OS
 .DS_Store
 Thumbs.db
 *.log
+
+# Godot (legacy)
+.godot/
+*.uid
+*.import
+export/

@@ -134,31 +134,30 @@ export class Game {
   private _setupFog(level: PhobiaLevel): void {
     if (!this.scene) return;
     this.scene.fogMode    = Scene.FOGMODE_EXP2;
-    // Nyctophobia = denser fog, acrophobia = light fog
     const density: Record<PhobiaLevel, number> = {
-      arachnophobia: 0.045,
-      claustrophobia: 0.06,
-      nyctophobia: 0.075,
-      acrophobia: 0.012,
+      arachnophobia:  0.018,
+      claustrophobia: 0.022,
+      nyctophobia:    0.030,
+      acrophobia:     0.006,
     };
     this.scene.fogDensity = density[level];
-    this.scene.fogColor   = new Color3(0.01, 0.01, 0.015);
+    this.scene.fogColor   = new Color3(0.04, 0.04, 0.06);
   }
 
   private _setupLights(): void {
     if (!this.scene) return;
-    // Extremely dark ambient — only flashlight + level lights should matter
+    // Ambient visible — enough to see the map structure
     const ambient = new HemisphericLight("ambient", new Vector3(0, 1, 0), this.scene);
-    ambient.intensity = 0.018;
-    ambient.diffuse   = new Color3(0.05, 0.05, 0.12);
-    ambient.groundColor = new Color3(0.02, 0.02, 0.04);
+    ambient.intensity   = 0.55;
+    ambient.diffuse     = new Color3(0.25, 0.22, 0.30);
+    ambient.groundColor = new Color3(0.08, 0.07, 0.10);
 
-    // Weak directional for very slight definition
+    // Directional for definition and shadows
     const dir = new DirectionalLight("dir", new Vector3(-1, -2, -1), this.scene);
-    dir.intensity = 0.06;
-    dir.diffuse   = new Color3(0.1, 0.08, 0.15);
+    dir.intensity = 0.35;
+    dir.diffuse   = new Color3(0.4, 0.35, 0.5);
 
-    this._shadowGen = new ShadowGenerator(512, dir);
+    this._shadowGen = new ShadowGenerator(1024, dir);
     this._shadowGen.useBlurExponentialShadowMap = true;
     this._shadowGen.blurKernel = 16;
   }

@@ -20,6 +20,7 @@ export class Sanity {
   private _interval: ReturnType<typeof setInterval> | null = null;
 
   onLow?: (isLow: boolean) => void;
+  onSanityChanged?: (pct: number) => void;
 
   constructor(scene: Scene, player: Player, hud: HUD) {
     this._scene  = scene;
@@ -63,6 +64,7 @@ export class Sanity {
     this.regenTimer = 0;
     this.value = Math.max(0, this.value - amount);
     this._hud.updateSanity(this.value / 100);
+    this.onSanityChanged?.(this.value / 100);
     this._updateVignette();
     if (this.value <= 0) this._player.takeDamage(999);
   }

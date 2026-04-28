@@ -1,11 +1,12 @@
 import {
-  Engine, Scene, Color4, Vector3, HemisphericLight,
-  DirectionalLight, ShadowGenerator, Color3,
+  Engine, Scene, Color4, Vector3,
+  HemisphericLight, DirectionalLight, ShadowGenerator, Color3,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 import { Player } from "./entities/Player";
 import { SpawnManager } from "./systems/SpawnManager";
 import { LevelBuilder } from "./scenes/LevelBuilder";
+import { PostProcessing } from "./systems/PostProcessing";
 import { HUD } from "./ui/HUD";
 
 export type PhobiaLevel = "arachnophobia" | "claustrophobia" | "nyctophobia" | "acrophobia";
@@ -16,33 +17,34 @@ export class Game {
   private scene:   Scene | null = null;
   private player:  Player | null = null;
   private spawn:   SpawnManager | null = null;
+  private fx:      PostProcessing | null = null;
 
-  isRunning   = false;
+  isRunning    = false;
   currentMode: GameMode = "escape";
   private currentLevel: PhobiaLevel = "arachnophobia";
-
   private survivalTimer = 0;
-  private survivalGoal  = 180; // 3 min
+  private survivalGoal  = 180;
   private objectives    = { total: 3, done: 0 };
   private exitUnlocked  = false;
 
   constructor(private canvas: HTMLCanvasElement, private hud: HUD) {
-    this.engine = new Engine(canvas, true, { stencil: true });
+    this.engine = new Engine(canvas, true, { stencil: true, antialias: true });
     window.addEventListener("resize", () => this.engine.resize());
   }
 
-  // ── Start / Stop ──────────────────────────────────────────────
   async startLevel(level: string, mode: string): Promise<void> {
     this.stop();
-    this.currentLevel = level as PhobiaLevel;
-    this.currentMode  = mode  as GameMode;
+    this.currentLevel  = level as PhobiaLevel;
+    this.currentMode   = mode  as GameMode;
     this.survivalTimer = 0;
     this.objectives    = { total: 3, done: 0 };
     this.exitUnlocked  = false;
 
     this.scene = new Scene(this.engine);
-    this.scene.clearColor = new Color4(0.01, 0.01, 0.02, 1);
-    this._setupFog();
+    this.scene.clearColor  = new Color4(0.005, 0.005, 0.008, 1);
+    this.scene.collisionsEnabled = true;
+
+    this._setupFog(level as PhobiaLevel);
     this._setupLights();
 
     await LevelBuilder.build(this.scene, level as PhobiaLevel);
@@ -50,6 +52,12 @@ export class Game {
     this.player = new Player(this.scene, this.canvas, this.hud);
     this.player.onDied   = () => this._onPlayerDied();
     this.player.onPickup = (name) => this.hud.showMessage("Recogido: " + name);
+
+    // Post-processing attached to player camera
+    this.fx = new PostProcessing(this.scene, this.player.camera);
+
+    // Wire sanity → post-processing distortion
+    this.player.sanity.onSanityChanged = (pct) => this.fx?.setSanityLevel(pct);
 
     this.spawn = new SpawnManager(this.scene, this.player, level as PhobiaLevel);
 
@@ -64,9 +72,11 @@ export class Game {
 
   stop(): void {
     this.isRunning = false;
+    this.fx?.dispose();
     this.spawn?.dispose();
     this.player?.dispose();
     this.scene?.dispose();
+    this.fx     = null;
     this.scene  = null;
     this.player = null;
     this.spawn  = null;
@@ -77,7 +87,6 @@ export class Game {
   pause():  void { this.isRunning = false; document.exitPointerLock?.(); }
   resume(): void { this.isRunning = true;  this.canvas.requestPointerLock(); }
 
-  // ── Per-frame update ─────────────────────────────────────────
   private _update(dt: number): void {
     this.player?.update(dt);
     this.spawn?.update(dt);
@@ -90,7 +99,6 @@ export class Game {
     }
   }
 
-  // ── Game events ──────────────────────────────────────────────
   completeObjective(): void {
     this.objectives.done++;
     this.hud.showMessage(`Objetivo ${this.objectives.done}/${this.objectives.total} completado`);
@@ -121,37 +129,38 @@ export class Game {
     document.exitPointerLock?.();
     document.getElementById("hud")!.classList.remove("visible");
     document.getElementById("win-screen")!.classList.add("visible");
-    fetch("/api/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        level: this.currentLevel,
-        mode:  this.currentMode,
-        time:  this.survivalTimer,
-      }),
-    }).catch(() => {});
   }
 
-  // ── Scene setup ───────────────────────────────────────────────
-  private _setupFog(): void {
+  private _setupFog(level: PhobiaLevel): void {
     if (!this.scene) return;
     this.scene.fogMode    = Scene.FOGMODE_EXP2;
-    this.scene.fogDensity = 0.04;
-    this.scene.fogColor   = new Color3(0.02, 0.02, 0.03);
+    // Nyctophobia = denser fog, acrophobia = light fog
+    const density: Record<PhobiaLevel, number> = {
+      arachnophobia: 0.045,
+      claustrophobia: 0.06,
+      nyctophobia: 0.075,
+      acrophobia: 0.012,
+    };
+    this.scene.fogDensity = density[level];
+    this.scene.fogColor   = new Color3(0.01, 0.01, 0.015);
   }
 
   private _setupLights(): void {
     if (!this.scene) return;
+    // Extremely dark ambient — only flashlight + level lights should matter
     const ambient = new HemisphericLight("ambient", new Vector3(0, 1, 0), this.scene);
-    ambient.intensity = 0.05;
-    ambient.diffuse   = new Color3(0.1, 0.1, 0.2);
+    ambient.intensity = 0.018;
+    ambient.diffuse   = new Color3(0.05, 0.05, 0.12);
+    ambient.groundColor = new Color3(0.02, 0.02, 0.04);
 
-    const dir = new DirectionalLight("sun", new Vector3(-1, -2, -1), this.scene);
-    dir.intensity = 0.3;
-    dir.diffuse   = new Color3(0.15, 0.1, 0.2);
+    // Weak directional for very slight definition
+    const dir = new DirectionalLight("dir", new Vector3(-1, -2, -1), this.scene);
+    dir.intensity = 0.06;
+    dir.diffuse   = new Color3(0.1, 0.08, 0.15);
 
-    this._shadowGen = new ShadowGenerator(1024, dir);
+    this._shadowGen = new ShadowGenerator(512, dir);
     this._shadowGen.useBlurExponentialShadowMap = true;
+    this._shadowGen.blurKernel = 16;
   }
 
   private _shadowGen?: ShadowGenerator;

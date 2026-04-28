@@ -1,6 +1,6 @@
 import {
-  Scene, MeshBuilder, StandardMaterial, Color3, Vector3,
-  Texture, PointLight, SpotLight, PBRMaterial,
+  Scene, MeshBuilder, Color3, Vector3,
+  PointLight, PBRMaterial,
 } from "@babylonjs/core";
 import type { PhobiaLevel } from "../Game";
 

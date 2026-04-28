@@ -1,6 +1,5 @@
 import {
-  Scene, MeshBuilder, StandardMaterial, Color3, Vector3,
-  Mesh, AbstractMesh, ActionManager,
+  Scene, MeshBuilder, StandardMaterial, Color3, Vector3, Mesh,
 } from "@babylonjs/core";
 import type { Player } from "./Player";
 

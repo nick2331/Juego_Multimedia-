@@ -1,7 +1,6 @@
 import {
   Engine, Scene, Color4, Vector3, HemisphericLight,
   DirectionalLight, ShadowGenerator, Color3,
-  FogMode, PointLight,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 import { Player } from "./entities/Player";
@@ -136,7 +135,7 @@ export class Game {
   // ── Scene setup ───────────────────────────────────────────────
   private _setupFog(): void {
     if (!this.scene) return;
-    this.scene.fogMode    = FogMode.FOGMODE_EXP2;
+    this.scene.fogMode    = Scene.FOGMODE_EXP2;
     this.scene.fogDensity = 0.04;
     this.scene.fogColor   = new Color3(0.02, 0.02, 0.03);
   }

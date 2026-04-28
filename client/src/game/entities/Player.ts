@@ -1,7 +1,6 @@
 import {
-  Scene, UniversalCamera, Vector3, MeshBuilder, StandardMaterial,
-  Color3, SpotLight, Ray, PickingInfo, ActionManager, ExecuteCodeAction,
-  KeyboardEventTypes,
+  Scene, UniversalCamera, Vector3,
+  Ray, PickingInfo,
 } from "@babylonjs/core";
 import { Flashlight } from "../systems/Flashlight";
 import { Sanity } from "../systems/Sanity";

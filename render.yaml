@@ -1,18 +1,5 @@
 services:
-  # ── Backend API ────────────────────────────────────────────────
-  - type: web
-    name: phobia-horror-api
-    runtime: node
-    rootDir: server
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 4000
-
-  # ── Frontend Static Site ───────────────────────────────────────
+  # ── Frontend Static Site (100% gratis, sin tarjeta) ───────────
   - type: web
     name: phobia-horror-client
     runtime: static
@@ -20,9 +7,6 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     routes:
-      - type: rewrite
-        source: /api/*
-        destination: https://phobia-horror-api.onrender.com/api/$1
       - type: rewrite
         source: /*
         destination: /index.html

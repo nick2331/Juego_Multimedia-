@@ -1,86 +1,121 @@
 import {
-  Scene, MeshBuilder, Color3, Vector3,
-  PointLight, PBRMaterial, Mesh,
+  Scene, MeshBuilder, StandardMaterial, Color3, Vector3, PointLight, Mesh,
 } from "@babylonjs/core";
 import type { PhobiaLevel } from "../Game";
 
-// ── Materials ─────────────────────────────────────────────────────
-function mkMat(scene: Scene, r: number, g: number, b: number, rough = 0.92, metal = 0.05): PBRMaterial {
-  const m = new PBRMaterial("m" + Math.random().toFixed(6), scene);
-  m.albedoColor = new Color3(r, g, b);
-  m.roughness   = rough;
-  m.metallic    = metal;
+// -- Helpers -------------------------------------------------------
+function mat(scene: Scene, r: number, g: number, b: number, emR = 0.06, emG = 0.06, emB = 0.07): StandardMaterial {
+  const m = new StandardMaterial("m" + Math.random().toFixed(5), scene);
+  m.diffuseColor  = new Color3(r, g, b);
+  m.emissiveColor = new Color3(emR, emG, emB);
+  m.specularColor = new Color3(0.2, 0.2, 0.25);
   return m;
 }
 
-// ── Add a light fixture ───────────────────────────────────────────
-function addLight(
-  scene: Scene, x: number, y: number, z: number,
-  r: number, g: number, b: number,
-  intensity: number, range: number,
-  flicker = false,
-): PointLight {
-  const l = new PointLight("l_" + x + "_" + z, new Vector3(x, y, z), scene);
+function box(scene: Scene, w: number, h: number, d: number, x: number, y: number, z: number, m: StandardMaterial, collide = true): Mesh {
+  const mesh = MeshBuilder.CreateBox("b", { width: w, height: h, depth: d }, scene);
+  mesh.position.set(x, y, z);
+  mesh.material = m;
+  if (collide) mesh.checkCollisions = true;
+  return mesh;
+}
+
+function cylinder(scene: Scene, dia: number, h: number, x: number, y: number, z: number, m: StandardMaterial): Mesh {
+  const mesh = MeshBuilder.CreateCylinder("cy", { diameter: dia, height: h, tessellation: 12 }, scene);
+  mesh.position.set(x, y, z);
+  mesh.material = m;
+  mesh.checkCollisions = true;
+  return mesh;
+}
+
+function sphere(scene: Scene, dia: number, x: number, y: number, z: number, m: StandardMaterial): Mesh {
+  const mesh = MeshBuilder.CreateSphere("sp", { diameter: dia, segments: 8 }, scene);
+  mesh.position.set(x, y, z);
+  mesh.material = m;
+  return mesh;
+}
+
+function lamp(scene: Scene, x: number, z: number, h: number, r: number, g: number, b: number, intensity: number, range: number, flicker = false): void {
+  // Pole
+  const poleMat = mat(scene, 0.3, 0.3, 0.32);
+  cylinder(scene, 0.12, h, x, h / 2, z, poleMat);
+  // Bulb sphere with emissive
+  const bulbMat = mat(scene, r, g, b, r * 0.8, g * 0.8, b * 0.8);
+  sphere(scene, 0.35, x, h + 0.1, z, bulbMat);
+  // Actual light
+  const l = new PointLight("lp", new Vector3(x, h, z), scene);
   l.diffuse   = new Color3(r, g, b);
-  l.specular  = new Color3(r * 0.5, g * 0.5, b * 0.5);
   l.intensity = intensity;
   l.range     = range;
   if (flicker) {
     const base = intensity;
     scene.registerBeforeRender(() => {
-      if (Math.random() < 0.015)
-        l.intensity = Math.random() < 0.25 ? 0 : base * (0.6 + Math.random() * 0.4);
+      if (Math.random() < 0.012) l.intensity = Math.random() < 0.3 ? 0 : base * (0.5 + Math.random() * 0.5);
     });
   }
-  return l;
 }
 
-// ── Build a closed room box (floor + ceiling + 4 walls) ───────────
-// openings: sides where there is NO wall (passage holes)
-function buildRoom(
-  scene: Scene,
-  cx: number, cz: number,
-  w: number, d: number, h: number,
-  wallMat: PBRMaterial, floorMat: PBRMaterial,
-  openings: Array<"N" | "S" | "E" | "W"> = [],
-): void {
-  // Floor
-  const fl = MeshBuilder.CreateBox("fl", { width: w, height: 0.3, depth: d }, scene);
-  fl.position.set(cx, -0.15, cz);
-  fl.material = floorMat;
-  fl.checkCollisions = true;
-  fl.receiveShadows  = true;
+function ceilingLight(scene: Scene, x: number, z: number, h: number, r: number, g: number, b: number, intensity: number, range: number, flicker = false): void {
+  const bulbMat = mat(scene, r, g, b, r * 0.9, g * 0.9, b * 0.9);
+  // Ceiling fixture
+  const fix = MeshBuilder.CreateBox("fix", { width: 0.6, height: 0.08, depth: 0.6 }, scene);
+  fix.position.set(x, h - 0.04, z);
+  fix.material = bulbMat;
+  const l = new PointLight("cl", new Vector3(x, h - 0.5, z), scene);
+  l.diffuse   = new Color3(r, g, b);
+  l.intensity = intensity;
+  l.range     = range;
+  if (flicker) {
+    const base = intensity;
+    scene.registerBeforeRender(() => {
+      if (Math.random() < 0.01) l.intensity = Math.random() < 0.25 ? 0 : base * (0.55 + Math.random() * 0.45);
+    });
+  }
+}
 
-  // Ceiling
-  const ceil = MeshBuilder.CreateBox("ce", { width: w + 0.3, height: 0.3, depth: d + 0.3 }, scene);
-  ceil.position.set(cx, h + 0.15, cz);
-  ceil.material = wallMat;
-
-  const wallDefs: { tag: "N"|"S"|"E"|"W"; ww: number; hh: number; dd: number; x: number; z: number }[] = [
-    { tag: "N", ww: w, hh: h, dd: 0.3, x: cx,       z: cz + d / 2 },
-    { tag: "S", ww: w, hh: h, dd: 0.3, x: cx,       z: cz - d / 2 },
-    { tag: "E", ww: 0.3, hh: h, dd: d, x: cx + w / 2, z: cz },
-    { tag: "W", ww: 0.3, hh: h, dd: d, x: cx - w / 2, z: cz },
-  ];
-  wallDefs.forEach(({ tag, ww, hh, dd, x, z }) => {
-    if (openings.includes(tag)) return;
-    const wall = MeshBuilder.CreateBox("w_" + tag, { width: ww, height: hh, depth: dd }, scene);
-    wall.position.set(x, hh / 2, z);
-    wall.material = wallMat;
-    wall.checkCollisions = true;
+// Interactable pickup item
+function addPickup(scene: Scene, x: number, z: number, type: "medkit" | "battery" | "sedative", onUse: (scene: Scene) => void): void {
+  const colors: Record<string, [number, number, number]> = {
+    medkit:   [0.9, 0.1, 0.1],
+    battery:  [0.9, 0.85, 0.1],
+    sedative: [0.1, 0.4, 0.9],
+  };
+  const labels: Record<string, string> = {
+    medkit:   "[E] Recoger Botiquin (+30 HP)",
+    battery:  "[E] Recoger Bateria (+40%)",
+    sedative: "[E] Recoger Sedante (+30 SAN)",
+  };
+  const [r, g, b] = colors[type];
+  const pickupMat = mat(scene, r, g, b, r * 0.6, g * 0.6, b * 0.6);
+  const mesh = MeshBuilder.CreateBox("pickup_" + type, { width: 0.4, height: 0.4, depth: 0.4 }, scene);
+  mesh.position.set(x, 0.2, z);
+  mesh.material = pickupMat;
+  // Bobbing animation
+  let t = Math.random() * Math.PI * 2;
+  scene.registerBeforeRender(() => {
+    t += 0.025;
+    mesh.position.y = 0.2 + Math.sin(t) * 0.08;
+    mesh.rotation.y += 0.015;
   });
+  mesh.metadata = {
+    interactable: true,
+    promptText: labels[type],
+    onInteract: (player: { heal: (n:number)=>void; flashlight: { recharge:(n:number)=>void }; sanity: { restore:(n:number)=>void } }) => {
+      if (type === "medkit")   player.heal(30);
+      if (type === "battery")  player.flashlight.recharge(40);
+      if (type === "sedative") player.sanity.restore(30);
+      onUse(scene);
+      mesh.dispose();
+    },
+  };
+  // Glow light under pickup
+  const gl = new PointLight("glow", new Vector3(x, 0.3, z), scene);
+  gl.diffuse   = new Color3(r, g, b);
+  gl.intensity = 0.8;
+  gl.range     = 3;
 }
 
-// ── Crate prop ───────────────────────────────────────────────────
-function addCrate(scene: Scene, x: number, z: number, mat: PBRMaterial, size = 0.7): void {
-  const c = MeshBuilder.CreateBox("cr", { width: size, height: size, depth: size * (0.8 + Math.random() * 0.4) }, scene);
-  c.position.set(x, size / 2, z);
-  c.rotation.y = Math.random() * Math.PI;
-  c.material   = mat;
-  c.checkCollisions = true;
-}
-
-// ═══════════════════════════════════════════════════════════════════
+// ================================================================
 export class LevelBuilder {
   static async build(scene: Scene, level: PhobiaLevel): Promise<void> {
     switch (level) {
@@ -91,180 +126,280 @@ export class LevelBuilder {
     }
   }
 
-  // ── ARACNOFOBIA — Almacén abandonado ─────────────────────────
+  // -- ARACNOFOBIA: Almacen urbano abandonado -------------------
   private static _warehouse(scene: Scene): void {
-    const wallM  = mkMat(scene, 0.22, 0.20, 0.20);
-    const floorM = mkMat(scene, 0.16, 0.14, 0.14);
-    const crateM = mkMat(scene, 0.32, 0.22, 0.12);
-    const metalM = mkMat(scene, 0.18, 0.18, 0.20, 0.6, 0.7);
+    const wallM  = mat(scene, 0.65, 0.60, 0.56);
+    const floorM = mat(scene, 0.45, 0.40, 0.38);
+    const woodM  = mat(scene, 0.62, 0.44, 0.26);
+    const metalM = mat(scene, 0.50, 0.50, 0.56);
+    const concM  = mat(scene, 0.68, 0.65, 0.62);
 
-    // ── Rooms ──────────────────────────────────────────────────
-    // Spawn room (player starts here)
-    buildRoom(scene,  0,  0,  9, 9, 4, wallM, floorM, ["N"]);
-    // Corridor 1
-    buildRoom(scene,  0, 10,  3, 11, 4, wallM, floorM, ["S", "N"]);
-    // Main hall
-    buildRoom(scene,  0, 22, 18, 16, 5, wallM, floorM, ["S", "E", "W", "N"]);
-    // Corridor 2 (east)
-    buildRoom(scene, 14, 22,  11, 3, 4, wallM, floorM, ["W", "E"]);
-    // Storage A
-    buildRoom(scene, 22, 22, 10, 10, 4, wallM, floorM, ["W"]);
-    // Corridor 3 (north)
-    buildRoom(scene,  0, 33,   3, 11, 4, wallM, floorM, ["S", "N"]);
-    // Storage B
-    buildRoom(scene,  0, 42,  12, 10, 4, wallM, floorM, ["S", "E"]);
-    // Corridor 4 (east to exit)
-    buildRoom(scene, 10, 42,  11, 3, 4, wallM, floorM, ["W", "E"]);
-    // EXIT room — green light
-    buildRoom(scene, 18, 42,   8, 8, 4, wallM, floorM, ["W"]);
+    // --- ROOM 1: Spawn ---
+    const r1w = 10, r1d = 10, h = 4.5;
+    box(scene, r1w, 0.3, r1d, 0, -0.15, 0, floorM);           // floor
+    box(scene, r1w, 0.2, r1d, 0, h, 0, wallM, false);         // ceiling
+    box(scene, r1w, h, 0.25, 0, h/2, r1d/2, wallM);           // N wall
+    box(scene, r1w, h, 0.25, 0, h/2, -r1d/2, wallM);          // S wall
+    box(scene, 0.25, h, r1d, -r1w/2, h/2, 0, wallM);          // W wall
+    // E wall with door gap (leave open toward corridor)
 
-    // ── Lights — warm yellow-orange ───────────────────────────
-    addLight(scene,  0, 3.6,  0, 1.0, 0.75, 0.3, 2.8, 14, true);
-    addLight(scene,  0, 3.6, 10, 1.0, 0.75, 0.3, 2.2, 12, true);
-    addLight(scene, -4, 4.6, 22, 1.0, 0.70, 0.25, 3.0, 16, true);
-    addLight(scene,  4, 4.6, 22, 1.0, 0.70, 0.25, 3.0, 16, true);
-    addLight(scene,  0, 4.6, 26, 0.9, 0.65, 0.2, 2.5, 14, false);
-    addLight(scene, 14, 3.6, 22, 1.0, 0.75, 0.3, 2.5, 12, true);
-    addLight(scene, 22, 3.6, 22, 0.8, 0.60, 0.3, 2.8, 13, false);
-    addLight(scene,  0, 3.6, 33, 1.0, 0.75, 0.3, 2.2, 12, true);
-    addLight(scene,  0, 3.6, 42, 1.0, 0.75, 0.3, 2.5, 13, true);
-    addLight(scene, 10, 3.6, 42, 1.0, 0.75, 0.3, 2.0, 12, true);
-    // EXIT green
-    addLight(scene, 18, 3.0, 42, 0.1, 1.0, 0.3, 3.5, 12, false);
-    // Emergency red in main hall
-    addLight(scene,  0, 0.8, 18, 0.9, 0.05, 0.05, 1.2, 8, false);
+    // --- CORRIDOR 1 ---
+    box(scene, 3.5, 0.3, 12, 7, -0.15, 0, floorM);
+    box(scene, 3.5, 0.2, 12, 7, h, 0, wallM, false);
+    box(scene, 0.25, h, 12, 5.1, h/2, 0, wallM);
+    box(scene, 0.25, h, 12, 8.9, h/2, 0, wallM);
 
-    // ── Crates ───────────────────────────────────────────────
-    const cp: [number, number][] = [
-      [2,3],[-2,3],[3,-2],[-3,-2],
-      [-6,22],[6,20],[-5,26],[5,26],[0,28],
-      [20,19],[24,20],[21,25],[23,24],
-      [-3,40],[4,44],[-4,43],[2,42],
-    ];
-    cp.forEach(([x, z]) => addCrate(scene, x, z, crateM, 0.55 + Math.random() * 0.5));
+    // --- ROOM 2: Main Hall ---
+    const r2x = 15, r2w = 18, r2d = 18;
+    box(scene, r2w, 0.3, r2d, r2x, -0.15, 0, floorM);
+    box(scene, r2w, 0.2, r2d, r2x, h+0.8, 0, wallM, false);
+    box(scene, 0.25, h+0.8, r2d, r2x-r2w/2, (h+0.8)/2, 0, wallM);  // W (door gap)
+    box(scene, r2w, h+0.8, 0.25, r2x, (h+0.8)/2, r2d/2, wallM);    // N
+    box(scene, r2w, h+0.8, 0.25, r2x, (h+0.8)/2, -r2d/2, wallM);   // S
+    box(scene, 0.25, h+0.8, r2d, r2x+r2w/2, (h+0.8)/2, 0, wallM);  // E
 
-    // Stacked crates
-    addCrate(scene,  6, 22, crateM, 1.2);
-    addCrate(scene,  6, 22, crateM, 0.8); // second layer — place manually
-    const stack = MeshBuilder.CreateBox("stack", { width: 1.2, height: 1.2, depth: 1.2 }, scene);
-    stack.position.set(6, 1.8, 22); stack.material = crateM; stack.checkCollisions = true;
+    // --- CORRIDOR 2: North ---
+    box(scene, 3.5, 0.3, 10, r2x, -0.15, 14, floorM);
+    box(scene, 3.5, 0.2, 10, r2x, h, 14, wallM, false);
+    box(scene, 0.25, h, 10, r2x-1.75, h/2, 14, wallM);
+    box(scene, 0.25, h, 10, r2x+1.75, h/2, 14, wallM);
 
-    // Pipes on walls
-    [[-4.2, 5], [4.2, 5], [-4.2, 15], [4.2, 15]].forEach(([x, z]) => {
-      const p = MeshBuilder.CreateCylinder("pipe", { diameter: 0.2, height: 4.5 }, scene);
-      p.position.set(x, 2.2, z); p.material = metalM;
+    // --- ROOM 3: Storage ---
+    box(scene, 12, 0.3, 12, r2x, -0.15, 24, floorM);
+    box(scene, 12, 0.2, 12, r2x, h, 24, wallM, false);
+    box(scene, 0.25, h, 12, r2x-6, h/2, 24, wallM);
+    box(scene, 0.25, h, 12, r2x+6, h/2, 24, wallM);
+    box(scene, 12, h, 0.25, r2x, h/2, 30, wallM);
+
+    // --- CORRIDOR 3: East ---
+    box(scene, 10, 0.3, 3.5, r2x+14, -0.15, 0, floorM);
+    box(scene, 10, 0.2, 3.5, r2x+14, h, 0, wallM, false);
+    box(scene, 10, h, 0.25, r2x+14, h/2, 1.75, wallM);
+    box(scene, 10, h, 0.25, r2x+14, h/2, -1.75, wallM);
+
+    // --- ROOM 4: Exit Room ---
+    box(scene, 10, 0.3, 10, r2x+24, -0.15, 0, floorM);
+    box(scene, 10, 0.2, 10, r2x+24, h, 0, wallM, false);
+    box(scene, 0.25, h, 10, r2x+24-5, h/2, 0, wallM);
+    box(scene, 10, h, 0.25, r2x+24, h/2, 5, wallM);
+    box(scene, 10, h, 0.25, r2x+24, h/2, -5, wallM);
+    box(scene, 0.25, h, 10, r2x+24+5, h/2, 0, wallM);
+
+    // -- Lights ----------------------------------------------
+    ceilingLight(scene, 0, 0, h, 1.0, 0.82, 0.4, 4.0, 16, true);
+    ceilingLight(scene, 7, 0, h, 1.0, 0.82, 0.4, 3.5, 14, true);
+    ceilingLight(scene, r2x-4, -4, h+0.5, 1.0, 0.80, 0.35, 4.5, 18, true);
+    ceilingLight(scene, r2x+4, -4, h+0.5, 1.0, 0.80, 0.35, 4.5, 18, false);
+    ceilingLight(scene, r2x-4,  4, h+0.5, 1.0, 0.80, 0.35, 4.5, 18, true);
+    ceilingLight(scene, r2x+4,  4, h+0.5, 1.0, 0.80, 0.35, 4.5, 18, false);
+    ceilingLight(scene, r2x, 24, h, 1.0, 0.82, 0.4, 4.0, 16, true);
+    ceilingLight(scene, r2x+14, 0, h, 1.0, 0.82, 0.4, 3.5, 14, true);
+    // Exit green
+    ceilingLight(scene, r2x+24, 0, h, 0.1, 1.0, 0.3, 5.0, 14);
+    // Emergency red
+    lamp(scene, r2x, 0.5, 1.2, 0.9, 0.1, 0.05, 1.5, 6);
+
+    // -- Street poles inside main hall ------------------------
+    lamp(scene, r2x-5, -5, 3.8, 1.0, 0.9, 0.5, 3.0, 12, false);
+    lamp(scene, r2x+5, -5, 3.8, 1.0, 0.9, 0.5, 3.0, 12, false);
+    lamp(scene, r2x-5,  5, 3.8, 1.0, 0.9, 0.5, 3.0, 12, false);
+    lamp(scene, r2x+5,  5, 3.8, 1.0, 0.9, 0.5, 3.0, 12, false);
+
+    // -- Props: crates, barrels, pillars ---------------------
+    [[-3,3],[2,-3],[3,2],[-2,-3]].forEach(([x,z]) => {
+      box(scene, 0.65, 0.65, 0.65, x, 0.33, z, woodM);
     });
+    // Stacked crates in main hall
+    box(scene, 0.8, 0.8, 0.8, r2x-6, 0.4, -5, woodM);
+    box(scene, 0.8, 0.8, 0.8, r2x-6, 1.2, -5, woodM);
+    box(scene, 0.8, 0.8, 0.8, r2x+6,  0.4,  5, woodM);
+    // Barrels (cylinders)
+    [
+      [r2x-3, -7], [r2x+3, -7], [r2x-3, 7], [r2x+3, 7],
+      [r2x+22, -3], [r2x+22, 3],
+    ].forEach(([bx, bz]) => cylinder(scene, 0.55, 0.85, bx, 0.43, bz, metalM));
+    // Concrete pillars in main hall
+    [[-6,-6],[-6,6],[6,-6],[6,6]].map(([px,pz]) => [r2x+px, pz]).forEach(([px,pz]) =>
+      cylinder(scene, 0.6, h+0.8, px, (h+0.8)/2, pz, concM)
+    );
+
+    // -- Pickups ---------------------------------------------
+    addPickup(scene, -3, -2, "medkit",   () => {});
+    addPickup(scene,  r2x, -7, "battery", () => {});
+    addPickup(scene,  r2x, 22, "medkit",  () => {});
+    addPickup(scene,  r2x+14, 3, "sedative", () => {});
+    addPickup(scene,  r2x+22, -3, "battery", () => {});
   }
 
-  // ── CLAUSTROFOBIA — Laberinto de pasillos ─────────────────────
+  // -- CLAUSTROFOBIA: Bunker subterraneo ------------------------
   private static _maze(scene: Scene): void {
-    const wallM  = mkMat(scene, 0.20, 0.20, 0.24);
-    const floorM = mkMat(scene, 0.14, 0.14, 0.17);
+    const wallM  = mat(scene, 0.58, 0.58, 0.64);
+    const floorM = mat(scene, 0.40, 0.40, 0.44);
+    const pipeMat = mat(scene, 0.35, 0.68, 0.35);
+    const H = 3.0;
 
-    const H = 3.0, W = 3.2;
+    const addCorridor = (cx: number, cz: number, w: number, d: number) => {
+      box(scene, w, 0.3, d, cx, -0.15, cz, floorM);
+      box(scene, w, 0.2, d, cx, H, cz, wallM, false);
+      if (w > d) { // horizontal corridor - add N/S walls
+        box(scene, w, H, 0.25, cx, H/2, cz + d/2, wallM);
+        box(scene, w, H, 0.25, cx, H/2, cz - d/2, wallM);
+      } else { // vertical - add E/W walls
+        box(scene, 0.25, H, d, cx + w/2, H/2, cz, wallM);
+        box(scene, 0.25, H, d, cx - w/2, H/2, cz, wallM);
+      }
+    };
 
-    buildRoom(scene,  0,  0, W, 22, H, wallM, floorM, ["N", "S"]);
-    buildRoom(scene,  0, 11, 22, W, H, wallM, floorM, ["E", "W"]);
-    buildRoom(scene, -9,  0, W, 14, H, wallM, floorM, ["N", "S"]);
-    buildRoom(scene,  9,  0, W, 14, H, wallM, floorM, ["N", "S"]);
-    buildRoom(scene,  0,-12, W,  8, H, wallM, floorM, ["N", "S"]);
-    buildRoom(scene,  0, 22, W,  8, H, wallM, floorM, ["S", "N"]);
-    // End rooms
-    buildRoom(scene,  0, 28,  6, 6, H, wallM, floorM, ["S"]);
-    buildRoom(scene, -9, -8,  6, 6, H, wallM, floorM, ["N"]);
-    buildRoom(scene,  9, -8,  6, 6, H, wallM, floorM, ["N"]);
-    buildRoom(scene,  0,-18,  7, 7, H, wallM, floorM, ["N"]);
+    // Main vertical spine
+    addCorridor(0, 0, 3, 30);
+    // Horizontal branches
+    addCorridor(0, 8, 20, 3);
+    addCorridor(0, -8, 20, 3);
+    // Side arms
+    addCorridor(-8, 0, 3, 14);
+    addCorridor(8, 0, 3, 14);
+    addCorridor(-8, 12, 8, 8);
+    addCorridor(8, 12, 8, 8);
+    addCorridor(-8, -12, 8, 8);
+    addCorridor(8, -12, 8, 8);
+    // Dead-end rooms
+    box(scene, 6, 0.3, 6, 0, -0.15, 18, floorM);
+    box(scene, 6, H, 0.25, 0, H/2, 21, wallM);
+    box(scene, 0.25, H, 6, -3, H/2, 18, wallM);
+    box(scene, 0.25, H, 6,  3, H/2, 18, wallM);
+    box(scene, 6, 0.2, 6, 0, H, 18, wallM, false);
 
     // Lights every 5m along corridors
-    for (let z = -16; z <= 26; z += 5)
-      addLight(scene, 0, H - 0.4, z, 0.8, 0.8, 1.0, 2.5, 10, true);
-    for (let x = -18; x <= 18; x += 5)
-      addLight(scene, x, H - 0.4, 11, 0.8, 0.7, 0.5, 2.5, 10, true);
+    for (let z = -13; z <= 18; z += 5)
+      ceilingLight(scene, 0, z, H, 0.9, 0.85, 1.0, 4.0, 12, true);
+    for (let x = -16; x <= 16; x += 6) {
+      ceilingLight(scene, x, 8, H, 0.9, 0.85, 1.0, 3.5, 11, true);
+      ceilingLight(scene, x, -8, H, 0.9, 0.85, 1.0, 3.5, 11, true);
+    }
+    ceilingLight(scene, 0, 18, H, 0.1, 1.0, 0.3, 4.5, 12); // exit
 
-    // Exit green
-    addLight(scene, 0, H - 0.5, 28, 0.1, 1.0, 0.3, 3.0, 10);
+    // Pipes along walls
+    for (let z = -12; z <= 16; z += 4)
+      cylinder(scene, 0.12, 0.6, 1.2, 2.2, z, pipeMat);
+
+    // Pickups
+    addPickup(scene, 0, -12, "medkit",   () => {});
+    addPickup(scene, -7, 4,  "battery",  () => {});
+    addPickup(scene,  7, -4, "sedative", () => {});
+    addPickup(scene,  0,  14, "medkit",  () => {});
   }
 
-  // ── NICTOFOBIA — Planta industrial oscura ─────────────────────
+  // -- NICTOFOBIA: Planta industrial oscura --------------------
   private static _plant(scene: Scene): void {
-    const wallM  = mkMat(scene, 0.12, 0.12, 0.14, 0.65, 0.7);
-    const floorM = mkMat(scene, 0.09, 0.09, 0.10, 0.8, 0.5);
+    const wallM  = mat(scene, 0.35, 0.35, 0.40, 0.04, 0.04, 0.05);
+    const floorM = mat(scene, 0.28, 0.28, 0.32, 0.03, 0.03, 0.04);
+    const metalM = mat(scene, 0.40, 0.40, 0.46, 0.04, 0.04, 0.06);
+    const H = 7;
 
-    buildRoom(scene, 0, 0, 42, 42, 7, wallM, floorM, []);
+    // Big outer shell
+    box(scene, 44, 0.3, 44, 0, -0.15, 0, floorM);
+    box(scene, 44, H, 0.25, 0, H/2, 22, wallM);
+    box(scene, 44, H, 0.25, 0, H/2, -22, wallM);
+    box(scene, 0.25, H, 44, -22, H/2, 0, wallM);
+    box(scene, 0.25, H, 44,  22, H/2, 0, wallM);
+    box(scene, 44, 0.25, 44, 0, H, 0, wallM, false);
 
-    // Interior dividers
-    const divs: [number, number, number, number][] = [
-      [-9, 0, 0.4, 14], [9, 0, 0.4, 14],
-      [0, 9, 14, 0.4],  [0, -9, 14, 0.4],
+    // Machines / obstacles (mixed shapes)
+    const machineData: [number, number, number, number, number][] = [
+      [9,9,3,4,3], [9,-9,4,3,3], [-9,9,4,3,3], [-9,-9,3,4,3],
+      [0,14,5,5,2], [14,0,2,5,5], [-14,0,2,5,5], [0,-14,5,5,2],
     ];
-    divs.forEach(([x, z, w, d]) => {
-      const dv = MeshBuilder.CreateBox("dv", { width: w, height: 5, depth: d }, scene);
-      dv.position.set(x, 2.5, z); dv.material = wallM; dv.checkCollisions = true;
+    machineData.forEach(([x,z,w,mh,d]) => {
+      box(scene, w, mh, d, x, mh/2, z, metalM);
     });
+    // Round tanks
+    [[16,16],[16,-16],[-16,16],[-16,-16]].forEach(([x,z]) =>
+      cylinder(scene, 3, 5, x, 2.5, z, metalM)
+    );
+    // Tall columns
+    [[-10,0],[10,0],[0,10],[0,-10]].forEach(([x,z]) =>
+      cylinder(scene, 0.6, H, x, H/2, z, metalM)
+    );
 
-    // Heavy machinery blocks
-    [[11,11,3,4],[−11,11,4,3],[11,-11,3,4],[-11,-11,4,3]].forEach(([x,z,w,d]) => {
-      const m = MeshBuilder.CreateBox("mach", { width: w, height: 3.5, depth: d }, scene);
-      m.position.set(x, 1.75, z); m.material = wallM; m.checkCollisions = true;
+    // Very dim emergency lights only
+    [[0,0],[14,14],[14,-14],[-14,14],[-14,-14]].forEach(([x,z]) => {
+      const l = new PointLight("em", new Vector3(x, H-0.5, z), scene);
+      l.diffuse = new Color3(0.6, 0.04, 0.04);
+      l.intensity = 1.2;
+      l.range = 10;
     });
+    // One slightly brighter yellow (broken lamp)
+    const broken = new PointLight("brk", new Vector3(4, 6.5, 4), scene);
+    broken.diffuse = new Color3(0.8, 0.6, 0.1);
+    broken.intensity = 1.8;
+    broken.range = 12;
+    scene.registerBeforeRender(() => {
+      if (Math.random() < 0.02) broken.intensity = Math.random() < 0.35 ? 0 : 1.8 * (0.4 + Math.random() * 0.6);
+    });
+    // Exit faint green
+    const el = new PointLight("exit", new Vector3(19, 1, 19), scene);
+    el.diffuse = new Color3(0.05, 0.7, 0.1); el.intensity = 1.2; el.range = 6;
 
-    // VERY dim red emergency lights — barely see anything
-    [[-16,16],[16,16],[-16,-16],[16,-16],[0,0]].forEach(([x,z]) =>
-      addLight(scene, x, 5.8, z, 0.7, 0.05, 0.05, 0.6, 10));
-
-    // Slightly brighter yellow emergency lights (damaged)
-    [[-5,5],[5,-5]].forEach(([x,z]) =>
-      addLight(scene, x, 5.8, z, 0.8, 0.6, 0.1, 0.9, 8, true));
-
-    // Exit (barely visible green glow)
-    addLight(scene, 18, 1.5, 18, 0.05, 0.8, 0.1, 1.8, 6);
+    // Pickups hidden in dark
+    addPickup(scene, -6, 6,   "medkit",   () => {});
+    addPickup(scene,  10, -3, "battery",  () => {});
+    addPickup(scene, -10, 3,  "battery",  () => {});
+    addPickup(scene,  0, 12,  "sedative", () => {});
+    addPickup(scene, -3, -10, "medkit",   () => {});
   }
 
-  // ── ACROFOBIA — Torre multi-nivel ─────────────────────────────
+  // -- ACROFOBIA: Torre con plataformas ------------------------
   private static _tower(scene: Scene): void {
-    const platM  = mkMat(scene, 0.22, 0.26, 0.28);
-    const metalM = mkMat(scene, 0.20, 0.20, 0.22, 0.55, 0.8);
+    const platM  = mat(scene, 0.55, 0.60, 0.65);
+    const metalM = mat(scene, 0.45, 0.45, 0.52);
+    const stoneM = mat(scene, 0.65, 0.62, 0.58);
 
-    // Abyss floor far below
-    const abyss = MeshBuilder.CreateBox("abyss", { width: 300, height: 1, depth: 300 }, scene);
-    abyss.position.set(0, -65, 0);
-    abyss.material = mkMat(scene, 0.02, 0.02, 0.03);
+    // Abyss
+    const abyss = MeshBuilder.CreateGround("abyss", { width: 400, height: 400 }, scene);
+    abyss.position.y = -70;
+    abyss.material = mat(scene, 0.02, 0.02, 0.03);
 
-    const makePlat = (name: string, x: number, y: number, z: number, w: number, d: number): Mesh => {
-      const p = MeshBuilder.CreateBox(name, { width: w, height: 0.5, depth: d }, scene);
-      p.position.set(x, y, z); p.material = platM; p.checkCollisions = true;
-      return p;
-    };
+    // Platforms
+    const plats: [number, number, number, number, number][] = [
+      [0,   0,  0,  14, 14],
+      [18,  5,  0,  10, 10],
+      [18,  12, 18, 10, 10],
+      [0,   19, 24, 12, 12],
+      [-16, 26, 18, 10, 10],
+    ];
+    plats.forEach(([x,y,z,w,d]) => {
+      box(scene, w, 0.6, d, x, y, z, platM);
+      // Railing
+      box(scene, w, 0.8, 0.15, x, y+0.7, z+d/2, metalM);
+      box(scene, w, 0.8, 0.15, x, y+0.7, z-d/2, metalM);
+      box(scene, 0.15, 0.8, d, x+w/2, y+0.7, z, metalM);
+      box(scene, 0.15, 0.8, d, x-w/2, y+0.7, z, metalM);
+    });
 
-    makePlat("p0", 0, 0, 0, 12, 12);    // spawn
-    makePlat("p1", 16, 5, 0, 9, 9);
-    makePlat("p2", 16, 11, 16, 9, 9);
-    makePlat("p3", 0, 18, 22, 11, 11);
-    makePlat("p4", -14, 25, 18, 9, 9);   // exit
-
-    // Bridges (narrow — scary)
-    const mkBridge = (x: number, y: number, z: number, w: number, d: number) => {
-      const b = MeshBuilder.CreateBox("br", { width: w, height: 0.3, depth: d }, scene);
-      b.position.set(x, y, z); b.material = metalM; b.checkCollisions = true;
-    };
-    mkBridge(8,  5,   0, 1.4, 16);   // p0 → p1
-    mkBridge(16, 11,  8, 1.4, 16);   // p1 → p2
-    mkBridge(8,  18, 22, 16,  1.4);  // p2 → p3
-    mkBridge(-7, 25, 18, 1.4, 14);   // p3 → p4
+    // Bridges (narrow - scary!)
+    box(scene, 1.5, 0.3, 18, 9, 5, 0, metalM);   // p0->p1
+    box(scene, 1.5, 0.3, 18, 18, 12, 9, metalM);  // p1->p2
+    box(scene, 18, 0.3, 1.5, 9, 19, 24, metalM);  // p2->p3
+    box(scene, 1.5, 0.3, 12, -8, 26, 21, metalM); // p3->p4
 
     // Structural columns
-    [[0,0],[16,0],[16,16],[0,22],[-14,18]].forEach(([x,z]) => {
-      const col = MeshBuilder.CreateCylinder("col", { diameter: 0.9, height: 35 }, scene);
-      col.position.set(x, 17, z); col.material = metalM; col.checkCollisions = true;
-    });
+    [[0,0],[18,0],[18,18],[0,24],[-16,18]].forEach(([x,z]) =>
+      cylinder(scene, 0.9, 35, x, 17, z, stoneM)
+    );
 
-    // Lights at each platform — cool blue-white for height atmosphere
-    addLight(scene,  0,  3,  0, 0.7, 0.8, 1.0, 3.0, 14);
-    addLight(scene, 16,  8,  0, 0.7, 0.8, 1.0, 3.0, 14);
-    addLight(scene, 16, 14, 16, 0.7, 0.8, 1.0, 2.8, 13);
-    addLight(scene,  0, 21, 22, 0.7, 0.8, 1.0, 3.0, 14);
-    addLight(scene, -14, 28, 18, 0.7, 0.8, 1.0, 3.0, 14);
-    // Exit
-    addLight(scene, -14, 26, 18, 0.1, 1.0, 0.3, 4.0, 10);
+    // Platform lights (cool blue-white)
+    [[0,2,0],[18,7,0],[18,14,18],[0,21,24],[-16,28,18]].forEach(([x,y,z]) => {
+      const l = new PointLight("pl", new Vector3(x, y, z), scene);
+      l.diffuse = new Color3(0.65, 0.75, 1.0); l.intensity = 4.5; l.range = 16;
+    });
+    // Exit green
+    const el = new PointLight("exit", new Vector3(-16, 27, 18), scene);
+    el.diffuse = new Color3(0.1, 1.0, 0.3); el.intensity = 5.0; el.range = 12;
+
+    // Pickups on platforms
+    addPickup(scene, 0,  0,   "medkit",   () => {});
+    addPickup(scene, 16, 5,   "battery",  () => {});
+    addPickup(scene, 16, 12,  "medkit",   () => {});
+    addPickup(scene, 0,  19,  "sedative", () => {});
   }
 }

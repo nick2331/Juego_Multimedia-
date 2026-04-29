@@ -76,7 +76,10 @@ export class Sanity {
   }
 
   private _enemyNearby(): boolean {
-    const enemies = this._scene.meshes.filter(m => m.name.startsWith("spider"));
+    const prefixes = ["spider", "shadow", "bat", "gargoyle"];
+    const enemies = this._scene.meshes.filter(m =>
+      prefixes.some(p => m.name.startsWith(p)),
+    );
     return enemies.some(e =>
       Vector3.Distance(this._player.position, e.position) <= this.enemyRadius,
     );

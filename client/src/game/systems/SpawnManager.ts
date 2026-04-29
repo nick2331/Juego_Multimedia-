@@ -1,55 +1,70 @@
 import { Scene, Vector3 } from "@babylonjs/core";
 import { Spider } from "../entities/Spider";
+import { Shadow } from "../entities/Shadow";
+import { Bat }    from "../entities/Bat";
+import { Gargoyle } from "../entities/Gargoyle";
 import type { Player } from "../entities/Player";
 import type { PhobiaLevel } from "../Game";
 
-const LEVEL_CONFIG: Record<PhobiaLevel, { maxSpiders: number; interval: number; ceiling: number }> = {
-  arachnophobia:  { maxSpiders: 5, interval: 12, ceiling: 0.5 },
-  claustrophobia: { maxSpiders: 2, interval: 25, ceiling: 0.2 },
-  nyctophobia:    { maxSpiders: 3, interval: 18, ceiling: 0.3 },
-  acrophobia:     { maxSpiders: 2, interval: 30, ceiling: 0.1 },
+type AnyEnemy = Spider | Shadow | Bat | Gargoyle;
+
+const LEVEL_CONFIG: Record<PhobiaLevel, { max: number; interval: number; ceiling: number }> = {
+  arachnophobia:  { max: 5, interval: 12, ceiling: 0.5 },
+  claustrophobia: { max: 2, interval: 25, ceiling: 0.2 },
+  nyctophobia:    { max: 3, interval: 18, ceiling: 0.3 },
+  acrophobia:     { max: 2, interval: 30, ceiling: 0.1 },
 };
 
 export class SpawnManager {
-  private spiders: Spider[] = [];
-  private timer    = 0;
-  private cfg: typeof LEVEL_CONFIG[PhobiaLevel];
+  private enemies: AnyEnemy[] = [];
+  private timer   = 0;
+  private level:  PhobiaLevel;
+  private cfg:    typeof LEVEL_CONFIG[PhobiaLevel];
 
   constructor(
     private scene: Scene,
     private player: Player,
     level: PhobiaLevel,
   ) {
-    this.cfg = LEVEL_CONFIG[level];
-    // First spider faster
+    this.level = level;
+    this.cfg   = LEVEL_CONFIG[level];
     this.timer = this.cfg.interval * 0.4;
-    // Spawn initial spider immediately for arachnophobia
+    // Spawn first enemy immediately for arachnophobia
     if (level === "arachnophobia") this._spawn();
   }
 
   update(dt: number): void {
     this._clean();
-    if (this.spiders.length >= this.cfg.maxSpiders) { this.timer = 0; return; }
+    if (this.enemies.length >= this.cfg.max) { this.timer = 0; return; }
     this.timer += dt;
     if (this.timer >= this.cfg.interval) {
       this.timer = 0;
       this._spawn();
     }
-    this.spiders.forEach(s => s.update(dt));
+    this.enemies.forEach(e => e.update(dt));
   }
 
   private _spawn(): void {
-    const pos = this._pickSpawnPos();
-    const spider = new Spider(this._scene, this.player, pos);
-    spider.onDied = () => { this.spiders = this.spiders.filter(s => s !== spider); };
+    const pos   = this._pickSpawnPos();
+    const enemy = this._createEnemy(pos);
+    enemy.onDied = () => { this.enemies = this.enemies.filter(e => e !== enemy); };
 
     if (Math.random() < this.cfg.ceiling) {
-      spider.dropFromCeiling(this.player.position.add(new Vector3(
+      enemy.dropFromCeiling(this.player.position.add(new Vector3(
         (Math.random() - 0.5) * 4, 0, (Math.random() - 0.5) * 4,
       )));
     }
 
-    this.spiders.push(spider);
+    this.enemies.push(enemy);
+  }
+
+  private _createEnemy(pos: Vector3): AnyEnemy {
+    switch (this.level) {
+      case "arachnophobia":  return new Spider(this.scene, this.player, pos);
+      case "claustrophobia": return new Shadow(this.scene, this.player, pos);
+      case "nyctophobia":    return new Bat(this.scene, this.player, pos);
+      case "acrophobia":     return new Gargoyle(this.scene, this.player, pos);
+    }
   }
 
   private _pickSpawnPos(): Vector3 {
@@ -63,13 +78,13 @@ export class SpawnManager {
   }
 
   private _clean(): void {
-    this.spiders = this.spiders.filter(s => s.state !== "dead");
+    this.enemies = this.enemies.filter(e => e.state !== "dead");
   }
 
-  getSpiders(): Spider[] { return this.spiders; }
+  getEnemies(): AnyEnemy[] { return this.enemies; }
 
   dispose(): void {
-    this.spiders.forEach(s => s.dispose());
-    this.spiders = [];
+    this.enemies.forEach(e => e.dispose());
+    this.enemies = [];
   }
 }
